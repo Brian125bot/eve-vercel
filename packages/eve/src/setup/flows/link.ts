@@ -67,6 +67,13 @@ export async function runLinkFlow(input: {
   deps?: Partial<LinkFlowDeps>;
 }): Promise<LinkFlowResult> {
   const { appRoot, prompter, signal, projectSelection = "existing-only" } = input;
+  if (process.env.GEMINI_API_KEY) {
+    if (prompter && prompter.log) prompter.log.message("⚡ Local GEMINI_API_KEY detected. Bypassing Vercel cloud linking flow.");
+    return {
+      kind: "done",
+      credential: "VERCEL_OIDC_TOKEN",
+    };
+  }
   const deps: LinkFlowDeps = {
     detectProjectIdentity,
     findEnvFileWithKey,

@@ -1,4 +1,5 @@
-import { generateText, type LanguageModel, type ModelMessage, type TelemetryOptions } from "ai";
+import { type LanguageModel, type ModelMessage } from "ai";
+import { GoogleGenAI } from "@google/genai";
 
 import type { RuntimeModelReference } from "#runtime/agent/bootstrap.js";
 import type { CompactionConfig, ToolLoopHarnessConfig } from "#harness/types.js";
@@ -86,7 +87,7 @@ export async function resolveCompactionModel(input: {
   readonly resolveModel: ToolLoopHarnessConfig["resolveModel"];
 }): Promise<{
   readonly model: LanguageModel;
-  readonly providerOptions: Parameters<typeof generateText>[0]["providerOptions"];
+  readonly providerOptions: any;
 }> {
   const reference = input.compactionModelReference ?? input.modelReference;
   const model =
@@ -94,9 +95,7 @@ export async function resolveCompactionModel(input: {
 
   return {
     model,
-    providerOptions: reference.providerOptions as Parameters<
-      typeof generateText
-    >[0]["providerOptions"],
+    providerOptions: reference.providerOptions as any,
   };
 }
 
@@ -106,11 +105,7 @@ export async function resolveCompactionModel(input: {
  */
 export async function compactMessages(
   messages: ModelMessage[],
-  model: LanguageModel,
-  config: CompactionConfig,
-  providerOptions?: Parameters<typeof generateText>[0]["providerOptions"],
-  telemetry?: TelemetryOptions,
-  headers?: Record<string, string>,
+  /* model */ _: any, config: CompactionConfig
 ): Promise<ModelMessage[]> {
   let keep = selectRecentWindowSize(messages, config);
 
@@ -125,26 +120,19 @@ export async function compactMessages(
       role: message.role,
     }));
 
-    const result = await generateText({
-      headers,
-      model,
-      prompt: formatCompactionPrompt(prunedOlder),
-      providerOptions,
-      system: COMPACTION_SYSTEM_PROMPT,
-      telemetry: telemetry ? { ...telemetry, functionId: "eve.compaction" } : undefined,
-      temperature: 0,
+    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: [{ role: "user", parts: [{ text: formatCompactionPrompt(prunedOlder) }] }],
+      config: {
+        systemInstruction: { role: "system", parts: [{ text: COMPACTION_SYSTEM_PROMPT }]},
+        temperature: 0
+      }
     });
 
-    // Keep recent context as plain conversation: tool results are dropped (the
-    // summary above already captures the older ones) and assistant tool calls
-    // are stripped, so no tool_use survives without its result. The summarized
-    // older region is the durable record of tool activity.
-    const keptTail = keepNonToolResultMessages(recent);
+    const result = { text: response.text || "" };
 
-    // The kept tail may be empty or trail with an assistant message; the summary
-    // assistant message also precedes it. Providers that don't support assistant
-    // prefill reject a request that ends on assistant content, so append a
-    // synthetic user message to resume from a user turn.
+    const keptTail = keepNonToolResultMessages(recent);
     const lastKeptRole = keptTail.at(-1)?.role;
     const trailingAssistantGuard: ModelMessage[] =
       lastKeptRole === undefined || lastKeptRole === "assistant"

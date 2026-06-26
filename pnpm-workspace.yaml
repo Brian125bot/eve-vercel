@@ -5,6 +5,7 @@ packages:
   - packages/*
 
 allowBuilds:
+  '@google/genai': set this to true or false
   "@mongodb-js/zstd": true
   "@nestjs/core": true
   "@parcel/watcher": false
